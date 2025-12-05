@@ -89,6 +89,7 @@
             const [shuffledChunks, setShuffledChunks] = useState([]);
             const [selectedChunks, setSelectedChunks] = useState([]);
             const [quizResult, setQuizResult] = useState(null);
+            const [jumpIdInput, setJumpIdInput] = useState("");
 
             const currentSentence = sentences[currentIndex] || sentences[0];
             const synthesisRef = useRef(window.speechSynthesis);
@@ -134,6 +135,26 @@
             }, [currentIndex, mode, sentences]);
 
             // --- Functions ---
+            const handleJumpToId = () => {
+                const idToJump = parseInt(jumpIdInput, 10);
+                if (isNaN(idToJump)) return;
+
+                const targetIndex = sentences.findIndex(s => s.id === idToJump);
+
+                if (targetIndex !== -1) {
+                    setCurrentIndex(targetIndex);
+                } else {
+                    alert(`ID ${idToJump} の問題は見つかりませんでした。`);
+                }
+                setJumpIdInput("");
+            };
+
+            const handleJumpInputKeyDown = (e) => {
+                if (e.key === 'Enter') {
+                    handleJumpToId();
+                }
+            };
+            
             const parseCSV = (text, isAutoLoad = false) => {
                 try {
                     const lines = text.trim().split('\n');
@@ -289,14 +310,19 @@
                 setShuffledChunks(prev => [...prev, chunk]);
             };
 
-            const checkAnswer = () => {
-                const currentAnswer = selectedChunks.map(c => c.text).join(' ');
-                const normalize = str => str.replace(/[.,]/g, '').trim().toLowerCase();
-                const isCorrect = normalize(currentAnswer) === normalize(currentSentence.text);
-                setQuizResult(isCorrect ? 'correct' : 'incorrect');
-                if (isCorrect) speakText("Correct!", 1.2);
-                else speakText("Try again.", 1.2);
-            };
+                        const checkAnswer = () => {
+
+                            const currentAnswer = selectedChunks.map(c => c.text).join(' ');
+
+                            const normalize = str => str.replace(/[.,]/g, '').trim().toLowerCase();
+
+                            const isCorrect = normalize(currentAnswer) === normalize(currentSentence.text);
+
+            
+
+                            setQuizResult(isCorrect ? 'correct' : 'incorrect');
+
+                        };
 
             if (isLoading) {
                 return (
@@ -370,25 +396,45 @@
                             </div>
                         ) : (
                             <>
-                                {/* --- ナビゲーションバー (変更点) --- */}
+                                {/* --- ナビゲーションバー --- */}
                                 <div className="flex justify-between items-center bg-white p-2 rounded-xl shadow-sm gap-2">
                                     <button onClick={() => setCurrentIndex(prev => Math.max(0, prev - 1))} disabled={currentIndex === 0} className="p-2 hover:bg-gray-100 rounded-full disabled:opacity-30 transition flex-shrink-0"><ChevronLeft className="w-6 h-6 text-indigo-600" /></button>
                                     
-                                    {/* 問題選択ドロップダウン */}
-                                    <div className="flex-1 min-w-0 bg-gray-100 rounded-lg relative">
-                                        <select 
-                                            value={currentIndex} 
-                                            onChange={(e) => setCurrentIndex(Number(e.target.value))}
-                                            className="w-full h-full bg-transparent p-2 text-sm text-gray-700 font-bold appearance-none outline-none truncate pr-8 z-10 relative cursor-pointer"
-                                        >
-                                            {sentences.map((sentence, idx) => (
-                                                <option key={sentence.id} value={idx}>
-                                                    {idx + 1}. [ID:{sentence.id}] {sentence.text.slice(0, 20)}{sentence.text.length > 20 ? '...' : ''}
-                                                </option>
-                                            ))}
-                                        </select>
-                                        <div className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 pointer-events-none">
-                                            <ListIcon className="w-4 h-4" />
+                                    <div className="flex-1 flex items-center gap-2 min-w-0">
+                                        {/* 問題選択ドロップダウン */}
+                                        <div className="flex-1 min-w-0 bg-gray-100 rounded-lg relative">
+                                            <select 
+                                                value={currentIndex} 
+                                                onChange={(e) => setCurrentIndex(Number(e.target.value))}
+                                                className="w-full h-full bg-transparent p-2 text-sm text-gray-700 font-bold appearance-none outline-none truncate pr-8 z-10 relative cursor-pointer"
+                                            >
+                                                {sentences.map((sentence, idx) => (
+                                                    <option key={sentence.id} value={idx}>
+                                                        {idx + 1}. [ID:{sentence.id}] {sentence.text.slice(0, 20)}{sentence.text.length > 20 ? '...' : ''}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                            <div className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 pointer-events-none">
+                                                <ListIcon className="w-4 h-4" />
+                                            </div>
+                                        </div>
+
+                                        {/* IDジャンプ入力 */}
+                                        <div className="flex items-center gap-1">
+                                            <input
+                                                type="number"
+                                                value={jumpIdInput}
+                                                onChange={(e) => setJumpIdInput(e.target.value)}
+                                                onKeyDown={handleJumpInputKeyDown}
+                                                className="w-20 p-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                                placeholder="ID Jump"
+                                            />
+                                            <button
+                                                onClick={handleJumpToId}
+                                                className="p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition text-sm font-bold"
+                                            >
+                                                Go
+                                            </button>
                                         </div>
                                     </div>
 
