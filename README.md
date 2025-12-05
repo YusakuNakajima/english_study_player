@@ -2,7 +2,7 @@
 - Distinction 2000の音声ファイルのうち、50kb以上のサイズのものを使用しています。
 - サイズ順に並べて連番を振っているので、元の単語帳とは全く違う連番です。
 # CSVデータ作成ガイドライン
-## 📝 CSVデータ作成ガイド（分かりやすい版）
+## 📝 CSVデータ作成ガイド
 
 このガイドラインに従って、アプリに読み込ませるCSVデータを作成してください。
 
@@ -12,6 +12,7 @@
 * **区切り文字**:
     * **メインの区切り**: **パイプ（`|`）** を使用
     * **チャンク内の区切り**: **ハット（`^`）** を使用
+* **チャンクはいくら増えても構わない、必ず適切な読みやすさの長さでチャンクを区切って、全文を用意すること**
 
 ### 2. 書式フォーマット
 
@@ -57,12 +58,3 @@ $$\text{英語の塊} \ \wedge \ \text{文法ラベル} \ \wedge \ \text{タイ�
 | **1** | I am studying English. | 私は英語を勉強しています。 | I am studying^Main Verb^core^私は勉強している | English.^Object^core^英語を |
 
 ---
-
-### 5. サンプルデータセット（コピー用）
-
-以下をコピーして、ご自身の英文に書き換えてください。
-
-| ID | 英文 | 日本語訳 | チャンク1 | チャンク2 | チャンク3 | チャンク4 |
-| :---: | :--- | :--- | :--- | :--- | :--- | :--- |
-| **1** | The sun rises in the east. | 太陽は東から昇ります。 | The sun rises^Subject+Verb^core^太陽は昇る | in the east.^Preposition^modifier^東から | | |
-| **2** | My children are so absorbed in their iPads. | 子供たちはiPadに夢中です。 | My children are^Subject+Verb^core^私の子供たちは～です | so absorbed^Adjective^core^とても夢中な | in their iPads.^Preposition^modifier^彼らのiPadに | |
