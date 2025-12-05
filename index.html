@@ -12,12 +12,37 @@
     <style>
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes popIn { 0% { transform: scale(0.8); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
-        @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
         .animate-fadeIn { animation: fadeIn 0.3s ease-out; }
         .animate-popIn { animation: popIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
-        .animate-shake { animation: shake 0.3s ease-in-out; }
         /* 再生中のプログレスバーアニメーション */
         .progress-bar { transition: width 0.1s linear; }
+        
+        /* カスタムレンジスライダー */
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: #22c55e;
+            cursor: pointer;
+            margin-top: -6px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: #e5e7eb;
+            border-radius: 2px;
+        }
+        input[type=range]:focus {
+            outline: none;
+        }
     </style>
 </head>
 <body class="bg-gray-50">
@@ -30,12 +55,6 @@
         const IconBase = ({ children, className }) => <span className={`inline-flex items-center justify-center ${className}`}>{children}</span>;
         const Play = ({ className }) => <IconBase className={className}>▶</IconBase>;
         const Pause = ({ className }) => <IconBase className={className}>⏸</IconBase>;
-        const RotateCcw = ({ className }) => <IconBase className={className}>↺</IconBase>;
-        const Check = ({ className }) => <IconBase className={className}>✓</IconBase>;
-        const ArrowRight = ({ className }) => <IconBase className={className}>→</IconBase>;
-        const BookOpen = ({ className }) => <IconBase className={className}>📖</IconBase>;
-        const Ear = ({ className }) => <IconBase className={className}>👂</IconBase>;
-        const Info = ({ className }) => <IconBase className={className}>ℹ️</IconBase>;
         const Settings = ({ className }) => <IconBase className={className}>⚙️</IconBase>;
         const ChevronRight = ({ className }) => <IconBase className={className}>›</IconBase>;
         const ChevronLeft = ({ className }) => <IconBase className={className}>‹</IconBase>;
@@ -44,15 +63,14 @@
         const Music = ({ className }) => <IconBase className={className}>🎵</IconBase>;
         const X = ({ className }) => <IconBase className={className}>✕</IconBase>;
         const Save = ({ className }) => <IconBase className={className}>💾</IconBase>;
-        const Trash2 = ({ className }) => <IconBase className={className}>🗑</IconBase>;
-        const Loader2 = ({ className }) => <IconBase className={`${className} animate-spin`}>⌛</IconBase>;
-        const AlertCircle = ({ className }) => <IconBase className={className}>⚠️</IconBase>;
-        const ListIcon = ({ className }) => <IconBase className={className}>☰</IconBase>;
+        const Check = ({ className }) => <IconBase className={className}>✓</IconBase>;
+        const Eye = ({ className }) => <IconBase className={className}>👁️</IconBase>;
+        const EyeOff = ({ className }) => <IconBase className={className}>🙈</IconBase>;
         const Clock = ({ className }) => <IconBase className={className}>🕒</IconBase>;
+        const Refresh = ({ className }) => <IconBase className={className}>🔄</IconBase>;
 
-        // --- 初期データセット (Podcast用フォーマット) ---
-        // ID | Timestamp | English | Japanese | Chunks...
-        const DEFAULT_CSV_CONTENT = `ID|タイムスタンプ|英文|日本語訳|チャンク1|チャンク2|チャンク3|チャンク4
+        // --- 初期データセット (デモ用) ---
+        const DEMO_CSV_CONTENT = `ID|タイムスタンプ|英文|日本語訳|チャンク1|チャンク2|チャンク3|チャンク4
 1|0|A new cold war has broken out between the US and China over artificial intelligence.|人工知能を巡って、アメリカと中国の間で新しい冷戦が勃発しました。|A new cold war has broken out^Subject + Verb^core^新しい冷戦が勃発した|between the US and China^Prep Phrase^modifier^アメリカと中国の間で|over artificial intelligence.^Prep Phrase^modifier^人工知能を巡って
 2|10|The US and China are locked in a competition that bears some really striking similarities to the tech races between the US and Soviet Union.|アメリカと中国は、技術競争と類似点を持つ競争の中で膠着状態にあります。|The US and China are locked^S+V^core^米中は膠着状態にある|in a competition^Prep Phrase^modifier^ある競争の中で|that bears^Relative Clause^connector^（その競争は）持っている|some really striking similarities^Object^core^いくつかの非常に際立った類似点を
 3|25|Josh says that history is repeating itself with AI.|ジョシュは、AIにおいて歴史は繰り返していると言います。|Josh says^S+V^core^ジョシュは言う|that history is repeating itself^Noun Clause^core^歴史は繰り返していると|with AI.^Prep Phrase^modifier^AIにおいて
@@ -70,55 +88,57 @@
             const [sentences, setSentences] = useState([]);
             const [currentIndex, setCurrentIndex] = useState(0);
             const [mode, setMode] = useState('study'); 
-            const [isPlayingTTS, setIsPlayingTTS] = useState(false);
-            const [playbackRate, setPlaybackRate] = useState(1.0);
             const [showMeaning, setShowMeaning] = useState(false);
             
             // Podcast Audio State
             const [podcastAudioSrc, setPodcastAudioSrc] = useState(null);
             const [isAudioPlaying, setIsAudioPlaying] = useState(false);
             const [audioCurrentTime, setAudioCurrentTime] = useState(0);
+            const [audioDuration, setAudioDuration] = useState(0); // 総時間を追加
             const audioPlayerRef = useRef(null);
             
-            // UI State
-            const [csvInput, setCsvInput] = useState(DEFAULT_CSV_CONTENT);
-            const [importError, setImportError] = useState(null);
-            const [jumpIdInput, setJumpIdInput] = useState("");
+            // シーク操作中かどうかを判定するRef（useEffectのループ防止）
+            const isSeekingRef = useRef(false);
+            
+            // Episode Management
+            const [fileList, setFileList] = useState([]); 
+            const [selectedFileName, setSelectedFileName] = useState('');
+            const [isLoading, setIsLoading] = useState(false);
+            const [loadError, setLoadError] = useState(null);
 
-            // Quiz State
-            const [shuffledChunks, setShuffledChunks] = useState([]);
-            const [selectedChunks, setSelectedChunks] = useState([]);
-            const [quizResult, setQuizResult] = useState(null);
+            // UI State (Settings)
+            const [csvInput, setCsvInput] = useState(DEMO_CSV_CONTENT);
 
-            const synthesisRef = useRef(window.speechSynthesis);
-
-            // 現在のセンテンス
             const currentSentence = sentences[currentIndex] || {};
-            // 次のセンテンス（終了時間の判定用）
             const nextSentence = sentences[currentIndex + 1];
 
             // --- Effects ---
             
-            // 初期ロード
+            // 初期ロード: ディレクトリ一覧を取得しにいく
             useEffect(() => {
-                parseCSV(DEFAULT_CSV_CONTENT, true);
+                fetchDirectoryListing();
             }, []);
 
             // センテンス切り替え時の処理
             useEffect(() => {
-                resetQuiz();
-                cancelSpeech();
+                setShowMeaning(false); // ページめくりで訳を隠す
                 
-                // 行が変わったら、その行の開始時間へシークして再生
-                if (podcastAudioSrc && audioPlayerRef.current) {
+                // シーク操作中以外なら、行が変わったときにその行の開始時間へシーク
+                if (!isSeekingRef.current && podcastAudioSrc && audioPlayerRef.current) {
                     const startTime = currentSentence.timestamp || 0;
-                    audioPlayerRef.current.currentTime = startTime;
-                    setAudioCurrentTime(startTime);
                     
-                    // 自動再生（ユーザーインタラクション後のみ有効な場合が多い）
-                    playPodcastSegment();
+                    // シーク処理 (現在の再生時間が開始時間と大きくずれている場合のみ)
+                    if (Math.abs(audioPlayerRef.current.currentTime - startTime) > 0.5) {
+                        audioPlayerRef.current.currentTime = startTime;
+                        setAudioCurrentTime(startTime);
+                    }
+
+                    // もし音声再生中なら、シーク後に再生継続
+                    if (isAudioPlaying) {
+                        playPodcastSegment();
+                    }
                 }
-            }, [currentIndex]); // sentencesを含めると再レンダリングループの可能性があるので外す
+            }, [currentIndex]); 
 
             // タイムスタンプ監視（指定区間終わったら止める）
             useEffect(() => {
@@ -130,13 +150,14 @@
 
                     setAudioCurrentTime(player.currentTime);
 
-                    // 終了時間の決定: 次の行の開始時間。もし次の行がなければ、音声の最後まで（制限なし）
-                    const endTime = nextSentence ? nextSentence.timestamp : player.duration;
-
-                    // バッファ（0.2秒くらい）を持たせて停止判定
-                    if (player.currentTime >= endTime && endTime > 0) {
-                        player.pause();
-                        setIsAudioPlaying(false);
+                    // セグメント再生モードの場合の終了判定
+                    // ユーザーがシーク操作中（isSeekingRef.current）のときは停止しない
+                    if (!isSeekingRef.current) {
+                        const endTime = nextSentence ? nextSentence.timestamp : player.duration;
+                        if (player.currentTime >= endTime && endTime > 0) {
+                            player.pause();
+                            setIsAudioPlaying(false);
+                        }
                     }
                 };
 
@@ -145,33 +166,145 @@
             }, [isAudioPlaying, nextSentence, podcastAudioSrc]);
 
             // --- Functions ---
+            
+            // 時間フォーマットヘルパー (分:秒)
+            const formatTime = (seconds) => {
+                if (!seconds || isNaN(seconds)) return "0:00";
+                const m = Math.floor(seconds / 60);
+                const s = Math.floor(seconds % 60).toString().padStart(2, '0');
+                return `${m}:${s}`;
+            };
 
-            // CSVパーサー (Podcast版: ID | Time | Text | Trans | Chunks...)
-            const parseCSV = (text, isAutoLoad = false) => {
+            // シークバー操作ハンドラ
+            const handleSeek = (e) => {
+                const newTime = parseFloat(e.target.value);
+                setAudioCurrentTime(newTime);
+                
+                if (audioPlayerRef.current) {
+                    isSeekingRef.current = true; // シーク操作開始フラグ
+                    audioPlayerRef.current.currentTime = newTime;
+                    
+                    // 現在の時間に対応するセンテンスを探す
+                    // (timestamp <= newTime となる最後の要素)
+                    const newIndex = sentences.reduce((foundIdx, s, idx) => {
+                        return (s.timestamp <= newTime) ? idx : foundIdx;
+                    }, 0);
+
+                    if (newIndex !== currentIndex) {
+                        setCurrentIndex(newIndex);
+                    }
+
+                    // 少し経ったらシークフラグを下ろす（即時だとuseEffectが反応してしまうため）
+                    setTimeout(() => {
+                        isSeekingRef.current = false;
+                    }, 500);
+                }
+            };
+
+            // ディレクトリ一覧取得
+            const fetchDirectoryListing = async () => {
+                setIsLoading(true);
+                setLoadError(null);
+                try {
+                    const res = await fetch('podcast/');
+                    if (!res.ok) throw new Error(`ディレクトリ一覧を取得できませんでした (${res.status})`);
+                    
+                    const text = await res.text();
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(text, 'text/html');
+                    const links = Array.from(doc.querySelectorAll('a'));
+                    
+                    const mp3Files = links
+                        .map(link => link.getAttribute('href'))
+                        .filter(href => href && href.toLowerCase().endsWith('.mp3'))
+                        .map(href => {
+                            const decoded = decodeURIComponent(href);
+                            return decoded.split('/').pop(); 
+                        });
+
+                    const uniqueFiles = [...new Set(mp3Files)].sort();
+
+                    if (uniqueFiles.length > 0) {
+                        setFileList(uniqueFiles);
+                        loadFile(uniqueFiles[0]);
+                    } else {
+                        console.warn("No mp3 files found.");
+                        setFileList([]);
+                        loadFile('demo'); 
+                    }
+                } catch (err) {
+                    console.error("Auto-discovery failed:", err);
+                    setLoadError("ファイル一覧の自動取得に失敗しました。サーバーの設定(Auto Index)を確認してください。デモデータを表示します。");
+                    loadFile('demo');
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            // ファイル読み込み処理
+            const loadFile = async (fileName) => {
+                setIsLoading(true);
+                setLoadError(null);
+                setSelectedFileName(fileName);
+                
+                if (fileName === 'demo') {
+                    parseCSV(DEMO_CSV_CONTENT);
+                    setPodcastAudioSrc(null);
+                    setIsLoading(false);
+                    return;
+                }
+
+                const mp3Path = `podcast/${fileName}`;
+                const csvPath = `podcast/${fileName.replace(/\.mp3$/i, '.csv')}`;
+
+                try {
+                    const res = await fetch(csvPath);
+                    if (!res.ok) {
+                         if(res.status === 404) {
+                             throw new Error(`CSVファイルが見つかりません: ${csvPath}\nMP3と同じファイル名で、拡張子を.csvにしたファイルを用意してください。`);
+                         }
+                         throw new Error(`CSV読み込みエラー (${res.status}): ${csvPath}`);
+                    }
+                    const text = await res.text();
+                    parseCSV(text);
+                    setPodcastAudioSrc(mp3Path);
+                } catch (err) {
+                    console.error(err);
+                    setLoadError(err.message);
+                    setPodcastAudioSrc(mp3Path); // 音声だけセット
+                    
+                    setSentences([{
+                        id: 0,
+                        timestamp: 0,
+                        text: "No CSV Data Available",
+                        translation: "CSVファイルが見つかりませんでした。音声のみ再生可能です。",
+                        chunks: [{ text: "CSV File Not Found", label: "Error", type: "core", japanese: "CSVファイルなし" }]
+                    }]);
+                    setCurrentIndex(0);
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            const parseCSV = (text) => {
                 try {
                     const lines = text.trim().split('\n');
                     const newSentences = lines.map((line, index) => {
                         const cleanLine = line.trim().replace(/^\uFEFF/, '');
-                        // ヘッダー行スキップ（数字で始まらない、かつID等の文字を含む場合）
-                        if (index === 0 && (cleanLine.toLowerCase().startsWith('id') || cleanLine.includes('英文') || cleanLine.includes('source'))) return null;
+                        if (index === 0 && (cleanLine.toLowerCase().startsWith('id') || cleanLine.includes('英文'))) return null;
                         if (!cleanLine) return null;
 
                         const parts = cleanLine.split('|').map(p => p.trim());
-                        // フォーマット: ID | Timestamp | English | Japanese | Chunks...
                         if (parts.length < 4) return null;
 
                         let idVal = parseInt(parts[0], 10);
                         if (isNaN(idVal)) idVal = index + 1;
 
-                        // Podcast版の列定義
-                        const timestampStr = parts[1];
-                        const timestamp = parseFloat(timestampStr) || 0;
+                        const timestamp = parseFloat(parts[1]) || 0;
                         const sentenceText = parts[2];
                         const translation = parts[3];
                         
-                        // チャンクは5列目(index 4)以降
                         const chunkRawData = parts.slice(4);
-                        
                         const chunks = chunkRawData.map(chunkStr => {
                             if (!chunkStr) return null;
                             const [cText, cLabel, cType, cJp] = chunkStr.split('^').map(s => s?.trim());
@@ -183,62 +316,47 @@
                             };
                         }).filter(c => c && c.text);
 
-                        return { 
-                            id: idVal, 
-                            timestamp: timestamp, // 秒
-                            text: sentenceText, 
-                            translation: translation, 
-                            chunks: chunks 
-                        };
+                        return { id: idVal, timestamp, text: sentenceText, translation, chunks };
                     }).filter(Boolean);
 
-                    if (newSentences.length === 0) throw new Error("有効なデータが見つかりませんでした。");
+                    if (newSentences.length === 0) throw new Error("データが空か、形式が正しくありません。");
 
-                    // タイムスタンプ順、あるいはID順にソートしたほうが安全だが、今回はCSVの並び順を正とする
                     setSentences(newSentences);
                     setCurrentIndex(0);
-                    setMode('study');
-                    setImportError(null);
-
-                    if (!isAutoLoad) alert(`${newSentences.length} 件のデータを読み込みました！`);
-                    return true;
+                    setCsvInput(text);
                 } catch (e) {
-                    setImportError(e.message);
-                    if (!isAutoLoad) alert(e.message);
-                    return false;
+                    setLoadError("CSV解析エラー: " + e.message);
                 }
             };
 
-            // Podcast音声ファイルのアップロード（1ファイルのみ）
             const handlePodcastUpload = (e) => {
                 const file = e.target.files[0];
                 if (file) {
                     if (podcastAudioSrc) URL.revokeObjectURL(podcastAudioSrc);
                     const url = URL.createObjectURL(file);
                     setPodcastAudioSrc(url);
-                    alert(`Podcast音声ファイルを読み込みました: ${file.name}`);
                 }
             };
 
             const playPodcastSegment = () => {
-                cancelSpeech();
                 if (audioPlayerRef.current && podcastAudioSrc) {
-                    // 現在の時間が範囲外なら、開始位置に戻す
                     const startTime = currentSentence.timestamp;
                     const endTime = nextSentence ? nextSentence.timestamp : 999999;
                     
-                    // まだ開始位置より前、あるいは終了位置より後ろにいる場合はシーク
-                    if (audioPlayerRef.current.currentTime < startTime || audioPlayerRef.current.currentTime >= endTime) {
+                    // ユーザーが手動で範囲外にシークしていた場合のみ、強制的に範囲内に戻す
+                    // （通常再生中に次のセグメントに行ってしまった場合などを想定）
+                    if (!isSeekingRef.current && (audioPlayerRef.current.currentTime < startTime || audioPlayerRef.current.currentTime >= endTime)) {
                          audioPlayerRef.current.currentTime = startTime;
                     }
                     
                     audioPlayerRef.current.play().then(() => {
                         setIsAudioPlaying(true);
                     }).catch(e => {
-                        console.error("Audio playback error:", e);
+                        console.error("Audio error:", e);
+                        alert("音声を再生できません。");
                     });
                 } else {
-                    if(!podcastAudioSrc) alert("Podcast音声ファイルが設定されていません。設定画面からアップロードしてください。");
+                    if(!podcastAudioSrc) alert("音声ファイルが見つかりません。");
                 }
             };
 
@@ -249,71 +367,7 @@
                 }
             };
 
-            const cancelSpeech = () => {
-                if (synthesisRef.current) {
-                    synthesisRef.current.cancel();
-                    setIsPlayingTTS(false);
-                }
-            };
-
-            const speakText = (text, rate = 1.0) => {
-                pausePodcast();
-                cancelSpeech();
-                const utterance = new SpeechSynthesisUtterance(text);
-                utterance.lang = 'en-US';
-                utterance.rate = rate;
-                utterance.onend = () => setIsPlayingTTS(false);
-                setIsPlayingTTS(true);
-                synthesisRef.current.speak(utterance);
-            };
-
-            // --- Quiz Logic ---
-            const resetQuiz = () => {
-                if (!currentSentence.chunks) return;
-                const chunksWithId = currentSentence.chunks.map((c, i) => ({ ...c, id: i }));
-                const shuffled = [...chunksWithId].sort(() => Math.random() - 0.5);
-                setShuffledChunks(shuffled);
-                setSelectedChunks([]);
-                setQuizResult(null);
-            };
-
-            const handleChunkSelect = (chunk) => {
-                if (quizResult === 'correct') return;
-                setShuffledChunks(prev => prev.filter(c => c.id !== chunk.id));
-                setSelectedChunks(prev => [...prev, chunk]);
-            };
-
-            const handleChunkDeselect = (chunk) => {
-                if (quizResult === 'correct') return;
-                setSelectedChunks(prev => prev.filter(c => c.id !== chunk.id));
-                setShuffledChunks(prev => [...prev, chunk]);
-            };
-
-            const checkAnswer = () => {
-                const currentAnswer = selectedChunks.map(c => c.text).join(' ');
-                const normalize = str => str.replace(/[.,]/g, '').trim().toLowerCase();
-                const isCorrect = normalize(currentAnswer) === normalize(currentSentence.text);
-                setQuizResult(isCorrect ? 'correct' : 'incorrect');
-            };
-
-            const handleJumpToId = () => {
-                const idToJump = parseInt(jumpIdInput, 10);
-                const targetIndex = sentences.findIndex(s => s.id === idToJump);
-                if (targetIndex !== -1) {
-                    setCurrentIndex(targetIndex);
-                } else {
-                    alert(`ID ${idToJump} は見つかりませんでした。`);
-                }
-                setJumpIdInput("");
-            };
-
-            if (sentences.length === 0) return <div className="p-10 text-center">Loading...</div>;
-
-            // プログレスバーの計算（現在のセグメント内での進行度）
-            const segmentStart = currentSentence.timestamp || 0;
-            const segmentEnd = nextSentence ? nextSentence.timestamp : (audioPlayerRef.current?.duration || segmentStart + 10);
-            const segmentDuration = segmentEnd - segmentStart;
-            const currentProgress = Math.max(0, Math.min(100, ((audioCurrentTime - segmentStart) / segmentDuration) * 100));
+            if (sentences.length === 0 && !isLoading) return <div className="p-10 text-center">Loading...</div>;
 
             return (
                 <div className="min-h-screen bg-gray-50 text-gray-800 font-sans pb-20">
@@ -321,40 +375,76 @@
                         ref={audioPlayerRef} 
                         src={podcastAudioSrc} 
                         onEnded={()=> setIsAudioPlaying(false)} 
-                        onError={() => setIsAudioPlaying(false)} 
+                        onError={() => setIsAudioPlaying(false)}
+                        onLoadedMetadata={(e) => setAudioDuration(e.target.duration)}
                     />
 
-                    <header className="bg-slate-900 text-white p-4 shadow-md sticky top-0 z-20">
-                        <div className="max-w-md mx-auto flex justify-between items-center">
-                            <h1 className="text-lg font-bold flex items-center gap-2">
-                                <Music className="w-5 h-5 text-green-400" />
-                                Podcast Chunk Master
-                            </h1>
-                            <button onClick={()=> setMode(mode === 'settings' ? 'study' : 'settings')} className={`p-2 rounded-full transition ${mode === 'settings' ? 'bg-slate-700' : 'hover:bg-slate-800'}`}>
-                                {mode === 'settings' ? <X className="w-5 h-5" /> : <Settings className="w-5 h-5" />}
-                            </button>
+                    <header className="bg-slate-900 text-white p-4 shadow-md sticky top-0 z-30">
+                        <div className="max-w-md mx-auto">
+                            <div className="flex justify-between items-center mb-2">
+                                <h1 className="text-lg font-bold flex items-center gap-2">
+                                    <Music className="w-5 h-5 text-green-400" />
+                                    Podcast Chunk Master
+                                </h1>
+                                <button onClick={()=> setMode(mode === 'settings' ? 'study' : 'settings')} className={`p-2 rounded-full transition ${mode === 'settings' ? 'bg-slate-700' : 'hover:bg-slate-800'}`}>
+                                    {mode === 'settings' ? <X className="w-5 h-5" /> : <Settings className="w-5 h-5" />}
+                                </button>
+                            </div>
+
+                            {/* エピソード選択メニュー */}
+                            <div className="flex gap-2 items-center">
+                                <select 
+                                    className="flex-1 bg-slate-800 text-sm rounded px-2 py-1 border border-slate-700 focus:outline-none focus:border-green-500"
+                                    value={selectedFileName}
+                                    onChange={(e) => loadFile(e.target.value)}
+                                >
+                                    {fileList.length === 0 && <option value="demo">-- Demo Data (No files found) --</option>}
+                                    {fileList.map((fileName, idx) => (
+                                        <option key={idx} value={fileName}>{fileName}</option>
+                                    ))}
+                                </select>
+                                <button onClick={fetchDirectoryListing} className="p-1 bg-slate-800 rounded hover:bg-slate-700 text-gray-400" title="リスト更新">
+                                    <Refresh className="w-4 h-4" />
+                                </button>
+                            </div>
+                            
+                            {/* エラーメッセージ */}
+                            {loadError && (
+                                <div className="mt-2 text-xs text-red-200 bg-red-900/80 p-2 rounded border border-red-700 whitespace-pre-wrap">
+                                    ⚠️ {loadError}
+                                </div>
+                            )}
                         </div>
                     </header>
 
                     <main className="max-w-md mx-auto p-4 space-y-6">
                         
-                        {/* メインプレイヤーコントローラー (Study/Quiz共通) */}
+                        {/* メインプレイヤーコントローラー */}
                         {mode !== 'settings' && (
-                            <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 sticky top-[70px] z-10">
+                            <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 sticky top-[100px] z-20">
                                 <div className="flex justify-between items-end mb-2">
-                                    <div className="text-xs font-bold text-gray-400 flex items-center gap-1">
+                                    <div className="text-xs font-bold text-gray-500 flex items-center gap-1">
                                         <Clock className="w-3 h-3" />
-                                        {Math.floor(currentSentence.timestamp / 60)}:{(currentSentence.timestamp % 60).toFixed(0).padStart(2, '0')}
-                                        <span className="font-normal text-gray-300 mx-1">/</span>
-                                        {nextSentence ? `${Math.floor(nextSentence.timestamp / 60)}:${(nextSentence.timestamp % 60).toFixed(0).padStart(2, '0')}` : 'End'}
+                                        <span>{formatTime(audioCurrentTime)}</span>
+                                        <span className="text-gray-300">/</span>
+                                        <span>{formatTime(audioDuration)}</span>
                                     </div>
                                     <div className="text-xs font-mono text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">
                                         ID: {currentSentence.id}
                                     </div>
                                 </div>
                                 
-                                <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden mb-4">
-                                    <div className="h-full bg-green-500 progress-bar" style={{ width: `${currentProgress}%` }}></div>
+                                {/* 全体シークバー */}
+                                <div className="mb-4 flex items-center">
+                                    <input 
+                                        type="range" 
+                                        min="0" 
+                                        max={audioDuration || 100} 
+                                        step="0.1"
+                                        value={audioCurrentTime} 
+                                        onChange={handleSeek}
+                                        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-green-500"
+                                    />
                                 </div>
 
                                 <div className="flex items-center gap-2">
@@ -374,14 +464,9 @@
                             <div className="space-y-6 animate-fadeIn">
                                 {/* 設定: CSV入力 */}
                                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
-                                    <h2 className="text-lg font-bold mb-4 flex items-center gap-2"><FileText className="w-5 h-5 text-indigo-600" />学習データの読み込み</h2>
-                                    
+                                    <h2 className="text-lg font-bold mb-4 flex items-center gap-2"><FileText className="w-5 h-5 text-indigo-600" />カスタムデータ編集</h2>
                                     <div className="mb-4">
-                                        <label className="block text-sm font-bold text-gray-700 mb-2">CSVデータ (ID|Time|En|Jp|Chunk...)</label>
-                                        <div className="bg-gray-50 p-2 text-[10px] text-gray-500 font-mono mb-2 overflow-x-auto whitespace-pre border border-gray-200 rounded">
-                                            1|0|Hello.|こんにちは|Hello^Greeting^core^やあ...<br/>
-                                            2|5.5|Next sentence.|次へ|...
-                                        </div>
+                                        <label className="block text-sm font-bold text-gray-700 mb-2">CSVデータ直接編集</label>
                                         <textarea 
                                             className="w-full h-32 p-3 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-mono leading-relaxed" 
                                             value={csvInput} 
@@ -393,8 +478,8 @@
 
                                 {/* 設定: 音声アップロード */}
                                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
-                                    <h2 className="text-lg font-bold mb-4 flex items-center gap-2"><Music className="w-5 h-5 text-pink-500" />Podcast音声設定</h2>
-                                    <p className="text-xs text-gray-500 mb-4">Podcast全体の音声ファイル(mp3等)を1つ選択してください。CSVのタイムスタンプに基づいて再生されます。</p>
+                                    <h2 className="text-lg font-bold mb-4 flex items-center gap-2"><Music className="w-5 h-5 text-pink-500" />手動ファイル読み込み</h2>
+                                    <p className="text-xs text-gray-500 mb-4">podcastフォルダからの自動読み込みがうまくいかない場合は、こちらからMP3ファイルを選択してください。</p>
                                     
                                     <label className="block w-full cursor-pointer bg-pink-50 hover:bg-pink-100 text-pink-700 py-6 px-4 rounded-xl border-2 border-dashed border-pink-200 text-center transition">
                                         <span className="flex flex-col items-center justify-center gap-2">
@@ -403,55 +488,47 @@
                                         </span>
                                         <input type="file" accept="audio/*" className="hidden" onChange={handlePodcastUpload} />
                                     </label>
-                                    {podcastAudioSrc && <div className="mt-3 text-xs text-green-600 font-bold text-center flex items-center justify-center gap-1"><Check className="w-3 h-3"/> 音声ファイル設定済み</div>}
+                                    {podcastAudioSrc && <div className="mt-3 text-xs text-green-600 font-bold text-center flex items-center justify-center gap-1"><Check className="w-3 h-3"/> 音声準備OK</div>}
                                 </div>
                             </div>
                         ) : (
                             <>
-                                {/* モード切替タブ */}
-                                <div className="flex bg-gray-200 p-1 rounded-lg">
-                                    <button onClick={() => setMode('study')} className={`flex-1 py-2 rounded-md text-sm font-medium transition flex justify-center items-center gap-2 ${mode === 'study' ? 'bg-white shadow text-indigo-600' : 'text-gray-500'}`}><BookOpen className="w-4 h-4" />構造理解</button>
-                                </div>
-
-                                {/* ジャンプ機能 */}
-                                <div className="flex justify-end gap-2 items-center">
-                                     <input
-                                        type="number"
-                                        value={jumpIdInput}
-                                        onChange={(e) => setJumpIdInput(e.target.value)}
-                                        className="w-20 p-1 border border-gray-300 rounded text-sm text-right"
-                                        placeholder="ID No."
-                                    />
-                                    <button onClick={handleJumpToId} className="bg-gray-200 text-gray-700 px-3 py-1 rounded text-xs font-bold hover:bg-gray-300">Go</button>
-                                </div>
-
-                                {mode === 'study' ? (
-                                    <div className="space-y-6 animate-fadeIn">
-                                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                                            <div className="flex flex-wrap gap-2 mb-4 leading-relaxed">
-                                                {currentSentence.chunks && currentSentence.chunks.map((chunk, idx) => (
-                                                    <div key={idx} className="group relative cursor-pointer">
-                                                        <span className={`inline-block px-2 py-1 rounded border-b-2 text-lg font-medium transition-all hover:opacity-80 ${TYPE_COLORS[chunk.type] || "bg-gray-100"}`}>{chunk.text}</span>
-                                                        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-max px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition pointer-events-none z-20 shadow-lg"><p className="font-bold text-center">{chunk.label}</p><p className="text-gray-300 text-center">{chunk.japanese}</p></div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-
-                                        <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100">
-                                            <div className="flex items-center justify-between mb-2">
-                                                <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wider">Meaning</h3>
-                                                <label className="flex items-center cursor-pointer">
-                                                    <input type="checkbox" checked={showMeaning} onChange={(e) => setShowMeaning(e.target.checked)} className="mr-2" />
-                                                    <span className="text-sm font-medium text-gray-700">表示する</span>
-                                                </label>
-                                            </div>
-                                            {showMeaning && (
-                                                <p className="text-gray-700 font-medium animate-fadeIn">{currentSentence.translation}</p>
-                                            )}
+                                <div className="space-y-6 animate-fadeIn">
+                                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                                        <div className="flex flex-wrap gap-2 mb-4 leading-relaxed">
+                                            {currentSentence.chunks && currentSentence.chunks.map((chunk, idx) => (
+                                                <div key={idx} className="group relative cursor-pointer">
+                                                    <span className={`inline-block px-2 py-1 rounded border-b-2 text-lg font-medium transition-all hover:opacity-80 ${TYPE_COLORS[chunk.type] || "bg-gray-100"}`}>{chunk.text}</span>
+                                                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-max px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition pointer-events-none z-20 shadow-lg"><p className="font-bold text-center">{chunk.label}</p><p className="text-gray-300 text-center">{chunk.japanese}</p></div>
+                                                </div>
+                                            ))}
                                         </div>
                                     </div>
-                                ) : null}
+
+                                    {/* Meaning ボタンエリア */}
+                                    <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 text-center">
+                                        {!showMeaning ? (
+                                            <button 
+                                                onClick={() => setShowMeaning(true)} 
+                                                className="w-full py-3 bg-white text-indigo-600 font-bold rounded-lg shadow-sm border border-indigo-200 hover:bg-indigo-50 transition flex items-center justify-center gap-2"
+                                            >
+                                                <Eye className="w-5 h-5" /> 日本語訳を表示する
+                                            </button>
+                                        ) : (
+                                            <div className="animate-fadeIn relative">
+                                                <p className="text-gray-800 font-medium text-lg leading-relaxed py-2">
+                                                    {currentSentence.translation}
+                                                </p>
+                                                <button 
+                                                    onClick={() => setShowMeaning(false)} 
+                                                    className="mt-2 text-xs text-indigo-400 hover:text-indigo-600 flex items-center justify-center gap-1 mx-auto"
+                                                >
+                                                    <EyeOff className="w-3 h-3" /> 隠す
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
                             </>
                         )}
                     </main>
