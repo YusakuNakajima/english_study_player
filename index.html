@@ -14,10 +14,8 @@
         @keyframes popIn { 0% { transform: scale(0.8); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
         .animate-fadeIn { animation: fadeIn 0.3s ease-out; }
         .animate-popIn { animation: popIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
-        /* 再生中のプログレスバーアニメーション */
         .progress-bar { transition: width 0.1s linear; }
         
-        /* カスタムレンジスライダー */
         input[type=range] {
             -webkit-appearance: none;
             width: 100%;
@@ -94,10 +92,8 @@
             const [podcastAudioSrc, setPodcastAudioSrc] = useState(null);
             const [isAudioPlaying, setIsAudioPlaying] = useState(false);
             const [audioCurrentTime, setAudioCurrentTime] = useState(0);
-            const [audioDuration, setAudioDuration] = useState(0); // 総時間を追加
+            const [audioDuration, setAudioDuration] = useState(0);
             const audioPlayerRef = useRef(null);
-            
-            // シーク操作中かどうかを判定するRef（useEffectのループ防止）
             const isSeekingRef = useRef(false);
             
             // Episode Management
@@ -113,38 +109,29 @@
 
             // --- Effects ---
             
-            // 初期ロード: ディレクトリ一覧を取得しにいく
             useEffect(() => {
-                fetchDirectoryListing();
+                fetchEpisodeList();
             }, []);
 
-            // センテンス切り替え時の処理（表示の更新と、必要に応じたシーク）
             useEffect(() => {
-                setShowMeaning(false); // ページめくりで訳を隠す
+                setShowMeaning(false);
                 
-                // シーク操作中以外で、音声がセットされている場合
                 if (!isSeekingRef.current && podcastAudioSrc && audioPlayerRef.current) {
                     const startTime = currentSentence.timestamp || 0;
                     const currentTime = audioPlayerRef.current.currentTime;
-                    
-                    // 「自動再生で自然に次の文へ移った」のか「ユーザーがボタンで飛ばした」のかを判定
-                    // 現在の時間が、新しい文の開始時間と大きくずれている場合のみシークする
-                    // (自然に再生されている場合、currentTimeはstartTimeよりわずかに大きいはず)
                     const timeDiff = Math.abs(currentTime - startTime);
                     
-                    if (timeDiff > 1.5) { // 1.5秒以上のズレがある場合は、ボタン操作によるジャンプとみなして頭出し
+                    if (timeDiff > 1.5) {
                         audioPlayerRef.current.currentTime = startTime;
                         setAudioCurrentTime(startTime);
                     }
                     
-                    // 音声が止まっていたら再生する（Playボタンで飛ばした場合など）
                     if (isAudioPlaying && audioPlayerRef.current.paused) {
                         playPodcast();
                     }
                 }
             }, [currentIndex]); 
 
-            // タイムスタンプ監視（再生位置に応じてcurrentIndexを自動更新）
             useEffect(() => {
                 if (!isAudioPlaying || !podcastAudioSrc) return;
 
@@ -156,22 +143,17 @@
                     setAudioCurrentTime(time);
 
                     if (!isSeekingRef.current) {
-                        // 現在の時間に対応するセンテンスを探す
                         let newIndex = -1;
                         for (let i = 0; i < sentences.length; i++) {
-                            // 現在時間より開始時間が前のもののうち、一番後ろのもの
                             if (sentences[i].timestamp <= time) {
                                 newIndex = i;
                             } else {
-                                // 時間を超えたら終了
                                 break;
                             }
                         }
                         
-                        // 見つからない場合は最初へ
                         if (newIndex === -1) newIndex = 0;
 
-                        // 現在の表示と違う場合のみ更新（自動スクロール）
                         if (newIndex !== currentIndex) {
                             setCurrentIndex(newIndex);
                         }
@@ -184,7 +166,6 @@
 
             // --- Functions ---
             
-            // 時間フォーマットヘルパー (分:秒)
             const formatTime = (seconds) => {
                 if (!seconds || isNaN(seconds)) return "0:00";
                 const m = Math.floor(seconds / 60);
@@ -192,37 +173,29 @@
                 return `${m}:${s}`;
             };
 
-            // タイムスタンプ解析ヘルパー (HH:MM:SS.mmm 対応)
             const parseTime = (timeStr) => {
                 if (!timeStr) return 0;
                 const str = timeStr.toString().trim();
 
-                // コロンが含まれている場合は HH:MM:SS 形式とみなす
                 if (str.includes(':')) {
                     const parts = str.split(':').map(Number);
                     if (parts.length === 3) {
-                        // HH:MM:SS.mmm
                         return (parts[0] * 3600) + (parts[1] * 60) + parts[2];
                     } else if (parts.length === 2) {
-                        // MM:SS.mmm
                         return (parts[0] * 60) + parts[1];
                     }
                 }
-
-                // それ以外は単純な秒数（float）として解析
                 return parseFloat(str) || 0;
             };
 
-            // シークバー操作ハンドラ
             const handleSeek = (e) => {
                 const newTime = parseFloat(e.target.value);
                 setAudioCurrentTime(newTime);
                 
                 if (audioPlayerRef.current) {
-                    isSeekingRef.current = true; // シーク操作開始フラグ
+                    isSeekingRef.current = true;
                     audioPlayerRef.current.currentTime = newTime;
                     
-                    // 現在の時間に対応するセンテンスを探して即座に表示切替
                     const newIndex = sentences.reduce((foundIdx, s, idx) => {
                         return (s.timestamp <= newTime) ? idx : foundIdx;
                     }, 0);
@@ -231,54 +204,43 @@
                         setCurrentIndex(newIndex);
                     }
 
-                    // 少し経ったらシークフラグを下ろす
                     setTimeout(() => {
                         isSeekingRef.current = false;
                     }, 500);
                 }
             };
 
-            // ディレクトリ一覧取得
-            const fetchDirectoryListing = async () => {
+            // ★変更点: JSONファイルからリストを取得する方式に変更
+            const fetchEpisodeList = async () => {
                 setIsLoading(true);
                 setLoadError(null);
                 try {
-                    const res = await fetch('podcast/');
-                    if (!res.ok) throw new Error(`ディレクトリ一覧を取得できませんでした (${res.status})`);
+                    // podcast/episodes.json を読み込みに行く
+                    const res = await fetch('podcast/episodes.json');
+                    if (!res.ok) throw new Error(`エピソードリストを取得できませんでした (${res.status})`);
                     
-                    const text = await res.text();
-                    const parser = new DOMParser();
-                    const doc = parser.parseFromString(text, 'text/html');
-                    const links = Array.from(doc.querySelectorAll('a'));
+                    const files = await res.json();
                     
-                    const mp3Files = links
-                        .map(link => link.getAttribute('href'))
-                        .filter(href => href && href.toLowerCase().endsWith('.mp3'))
-                        .map(href => {
-                            const decoded = decodeURIComponent(href);
-                            return decoded.split('/').pop(); 
-                        });
+                    // .mp3 で終わるファイルのみをフィルタリング（念のため）
+                    const mp3Files = files.filter(f => f.toLowerCase().endsWith('.mp3'));
 
-                    const uniqueFiles = [...new Set(mp3Files)].sort();
-
-                    if (uniqueFiles.length > 0) {
-                        setFileList(uniqueFiles);
-                        loadFile(uniqueFiles[0]);
+                    if (mp3Files.length > 0) {
+                        setFileList(mp3Files);
+                        loadFile(mp3Files[0]); // 最初のファイルをロード
                     } else {
-                        console.warn("No mp3 files found.");
+                        console.warn("No mp3 files found in JSON.");
                         setFileList([]);
                         loadFile('demo'); 
                     }
                 } catch (err) {
-                    console.error("Auto-discovery failed:", err);
-                    setLoadError("ファイル一覧の自動取得に失敗しました。サーバーの設定(Auto Index)を確認してください。デモデータを表示します。");
+                    console.error("Failed to load episode list:", err);
+                    setLoadError("エピソードリストの読み込みに失敗しました。podcast/episodes.json が存在するか確認してください。デモデータを表示します。");
                     loadFile('demo');
                 } finally {
                     setIsLoading(false);
                 }
             };
 
-            // ファイル読み込み処理
             const loadFile = async (fileName) => {
                 setIsLoading(true);
                 setLoadError(null);
@@ -292,6 +254,7 @@
                 }
 
                 const mp3Path = `podcast/${fileName}`;
+                // MP3のファイル名からCSVのパスを推測 (拡張子置換)
                 const csvPath = `podcast/${fileName.replace(/\.mp3$/i, '.csv')}`;
 
                 try {
@@ -308,7 +271,7 @@
                 } catch (err) {
                     console.error(err);
                     setLoadError(err.message);
-                    setPodcastAudioSrc(mp3Path); // 音声だけセット
+                    setPodcastAudioSrc(mp3Path); 
                     
                     setSentences([{
                         id: 0,
@@ -329,20 +292,16 @@
                     const newSentences = lines.map((line, index) => {
                         const cleanLine = line.trim().replace(/^\uFEFF/, '');
                         
-                        // ヘッダー行のスキップ判定
                         if (index === 0 && (cleanLine.toLowerCase().includes('id|') || cleanLine.includes('英文'))) return null;
                         if (!cleanLine) return null;
 
                         const parts = cleanLine.split('|').map(p => p.trim());
                         if (parts.length < 4) return null;
 
-                        // IDの解析（数値でない場合はインデックスを使用）
                         let idVal = parseInt(parts[0], 10);
                         if (isNaN(idVal)) idVal = index + 1;
 
-                        // タイムスタンプの解析（HH:MM:SS対応）
                         const timestamp = parseTime(parts[1]);
-                        
                         const sentenceText = parts[2];
                         const translation = parts[3];
                         
@@ -424,24 +383,22 @@
                                 </button>
                             </div>
 
-                            {/* エピソード選択メニュー */}
                             <div className="flex gap-2 items-center">
                                 <select 
                                     className="flex-1 bg-slate-800 text-sm rounded px-2 py-1 border border-slate-700 focus:outline-none focus:border-green-500"
                                     value={selectedFileName}
                                     onChange={(e) => loadFile(e.target.value)}
                                 >
-                                    {fileList.length === 0 && <option value="demo">-- Demo Data (No files found) --</option>}
+                                    {fileList.length === 0 && <option value="demo">-- Demo Data --</option>}
                                     {fileList.map((fileName, idx) => (
                                         <option key={idx} value={fileName}>{fileName}</option>
                                     ))}
                                 </select>
-                                <button onClick={fetchDirectoryListing} className="p-1 bg-slate-800 rounded hover:bg-slate-700 text-gray-400" title="リスト更新">
+                                <button onClick={fetchEpisodeList} className="p-1 bg-slate-800 rounded hover:bg-slate-700 text-gray-400" title="リスト更新">
                                     <Refresh className="w-4 h-4" />
                                 </button>
                             </div>
                             
-                            {/* エラーメッセージ */}
                             {loadError && (
                                 <div className="mt-2 text-xs text-red-200 bg-red-900/80 p-2 rounded border border-red-700 whitespace-pre-wrap">
                                     ⚠️ {loadError}
@@ -452,7 +409,6 @@
 
                     <main className="max-w-md mx-auto p-4 space-y-6">
                         
-                        {/* メインプレイヤーコントローラー */}
                         {mode !== 'settings' && (
                             <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 sticky top-[100px] z-20">
                                 <div className="flex justify-between items-end mb-2">
@@ -467,7 +423,6 @@
                                     </div>
                                 </div>
                                 
-                                {/* 全体シークバー */}
                                 <div className="mb-4 flex items-center">
                                     <input 
                                         type="range" 
@@ -495,7 +450,6 @@
 
                         {mode === 'settings' ? (
                             <div className="space-y-6 animate-fadeIn">
-                                {/* 設定: CSV入力 */}
                                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
                                     <h2 className="text-lg font-bold mb-4 flex items-center gap-2"><FileText className="w-5 h-5 text-indigo-600" />カスタムデータ編集</h2>
                                     <div className="mb-4">
@@ -509,10 +463,9 @@
                                     </div>
                                 </div>
 
-                                {/* 設定: 音声アップロード */}
                                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
                                     <h2 className="text-lg font-bold mb-4 flex items-center gap-2"><Music className="w-5 h-5 text-pink-500" />手動ファイル読み込み</h2>
-                                    <p className="text-xs text-gray-500 mb-4">podcastフォルダからの自動読み込みがうまくいかない場合は、こちらからMP3ファイルを選択してください。</p>
+                                    <p className="text-xs text-gray-500 mb-4">JSONリストからの読み込みがうまくいかない場合は、こちらからMP3ファイルを選択してください。</p>
                                     
                                     <label className="block w-full cursor-pointer bg-pink-50 hover:bg-pink-100 text-pink-700 py-6 px-4 rounded-xl border-2 border-dashed border-pink-200 text-center transition">
                                         <span className="flex flex-col items-center justify-center gap-2">
@@ -538,7 +491,6 @@
                                         </div>
                                     </div>
 
-                                    {/* Meaning ボタンエリア */}
                                     <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 text-center">
                                         {!showMeaning ? (
                                             <button 
