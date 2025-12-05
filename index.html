@@ -110,7 +110,6 @@
             const [csvInput, setCsvInput] = useState(DEMO_CSV_CONTENT);
 
             const currentSentence = sentences[currentIndex] || {};
-            const nextSentence = sentences[currentIndex + 1];
 
             // --- Effects ---
             
@@ -191,6 +190,27 @@
                 const m = Math.floor(seconds / 60);
                 const s = Math.floor(seconds % 60).toString().padStart(2, '0');
                 return `${m}:${s}`;
+            };
+
+            // タイムスタンプ解析ヘルパー (HH:MM:SS.mmm 対応)
+            const parseTime = (timeStr) => {
+                if (!timeStr) return 0;
+                const str = timeStr.toString().trim();
+
+                // コロンが含まれている場合は HH:MM:SS 形式とみなす
+                if (str.includes(':')) {
+                    const parts = str.split(':').map(Number);
+                    if (parts.length === 3) {
+                        // HH:MM:SS.mmm
+                        return (parts[0] * 3600) + (parts[1] * 60) + parts[2];
+                    } else if (parts.length === 2) {
+                        // MM:SS.mmm
+                        return (parts[0] * 60) + parts[1];
+                    }
+                }
+
+                // それ以外は単純な秒数（float）として解析
+                return parseFloat(str) || 0;
             };
 
             // シークバー操作ハンドラ
@@ -308,16 +328,21 @@
                     const lines = text.trim().split('\n');
                     const newSentences = lines.map((line, index) => {
                         const cleanLine = line.trim().replace(/^\uFEFF/, '');
-                        if (index === 0 && (cleanLine.toLowerCase().startsWith('id') || cleanLine.includes('英文'))) return null;
+                        
+                        // ヘッダー行のスキップ判定
+                        if (index === 0 && (cleanLine.toLowerCase().includes('id|') || cleanLine.includes('英文'))) return null;
                         if (!cleanLine) return null;
 
                         const parts = cleanLine.split('|').map(p => p.trim());
                         if (parts.length < 4) return null;
 
+                        // IDの解析（数値でない場合はインデックスを使用）
                         let idVal = parseInt(parts[0], 10);
                         if (isNaN(idVal)) idVal = index + 1;
 
-                        const timestamp = parseFloat(parts[1]) || 0;
+                        // タイムスタンプの解析（HH:MM:SS対応）
+                        const timestamp = parseTime(parts[1]);
+                        
                         const sentenceText = parts[2];
                         const translation = parts[3];
                         
