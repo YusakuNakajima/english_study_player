@@ -93,7 +93,7 @@
             const currentSentence = sentences[currentIndex] || sentences[0];
             const synthesisRef = useRef(window.speechSynthesis);
 
-            const nativeAudioSrc = audioMap[currentSentence.id] || `${currentSentence.id}.mp3`;
+            const nativeAudioSrc = audioMap[currentSentence.id] || `./audio/${currentSentence.id}.mp3`;
 
             // --- Effects ---
             useEffect(() => {
