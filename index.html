@@ -119,28 +119,33 @@
                 fetchDirectoryListing();
             }, []);
 
-            // センテンス切り替え時の処理
+            // センテンス切り替え時の処理（表示の更新と、必要に応じたシーク）
             useEffect(() => {
                 setShowMeaning(false); // ページめくりで訳を隠す
                 
-                // シーク操作中以外なら、行が変わったときにその行の開始時間へシーク
+                // シーク操作中以外で、音声がセットされている場合
                 if (!isSeekingRef.current && podcastAudioSrc && audioPlayerRef.current) {
                     const startTime = currentSentence.timestamp || 0;
+                    const currentTime = audioPlayerRef.current.currentTime;
                     
-                    // シーク処理 (現在の再生時間が開始時間と大きくずれている場合のみ)
-                    if (Math.abs(audioPlayerRef.current.currentTime - startTime) > 0.5) {
+                    // 「自動再生で自然に次の文へ移った」のか「ユーザーがボタンで飛ばした」のかを判定
+                    // 現在の時間が、新しい文の開始時間と大きくずれている場合のみシークする
+                    // (自然に再生されている場合、currentTimeはstartTimeよりわずかに大きいはず)
+                    const timeDiff = Math.abs(currentTime - startTime);
+                    
+                    if (timeDiff > 1.5) { // 1.5秒以上のズレがある場合は、ボタン操作によるジャンプとみなして頭出し
                         audioPlayerRef.current.currentTime = startTime;
                         setAudioCurrentTime(startTime);
                     }
-
-                    // もし音声再生中なら、シーク後に再生継続
-                    if (isAudioPlaying) {
-                        playPodcastSegment();
+                    
+                    // 音声が止まっていたら再生する（Playボタンで飛ばした場合など）
+                    if (isAudioPlaying && audioPlayerRef.current.paused) {
+                        playPodcast();
                     }
                 }
             }, [currentIndex]); 
 
-            // タイムスタンプ監視（指定区間終わったら止める）
+            // タイムスタンプ監視（再生位置に応じてcurrentIndexを自動更新）
             useEffect(() => {
                 if (!isAudioPlaying || !podcastAudioSrc) return;
 
@@ -148,22 +153,35 @@
                     const player = audioPlayerRef.current;
                     if (!player) return;
 
-                    setAudioCurrentTime(player.currentTime);
+                    const time = player.currentTime;
+                    setAudioCurrentTime(time);
 
-                    // セグメント再生モードの場合の終了判定
-                    // ユーザーがシーク操作中（isSeekingRef.current）のときは停止しない
                     if (!isSeekingRef.current) {
-                        const endTime = nextSentence ? nextSentence.timestamp : player.duration;
-                        if (player.currentTime >= endTime && endTime > 0) {
-                            player.pause();
-                            setIsAudioPlaying(false);
+                        // 現在の時間に対応するセンテンスを探す
+                        let newIndex = -1;
+                        for (let i = 0; i < sentences.length; i++) {
+                            // 現在時間より開始時間が前のもののうち、一番後ろのもの
+                            if (sentences[i].timestamp <= time) {
+                                newIndex = i;
+                            } else {
+                                // 時間を超えたら終了
+                                break;
+                            }
+                        }
+                        
+                        // 見つからない場合は最初へ
+                        if (newIndex === -1) newIndex = 0;
+
+                        // 現在の表示と違う場合のみ更新（自動スクロール）
+                        if (newIndex !== currentIndex) {
+                            setCurrentIndex(newIndex);
                         }
                     }
                 };
 
                 const interval = setInterval(checkTime, 100);
                 return () => clearInterval(interval);
-            }, [isAudioPlaying, nextSentence, podcastAudioSrc]);
+            }, [isAudioPlaying, sentences, currentIndex, podcastAudioSrc]);
 
             // --- Functions ---
             
@@ -184,8 +202,7 @@
                     isSeekingRef.current = true; // シーク操作開始フラグ
                     audioPlayerRef.current.currentTime = newTime;
                     
-                    // 現在の時間に対応するセンテンスを探す
-                    // (timestamp <= newTime となる最後の要素)
+                    // 現在の時間に対応するセンテンスを探して即座に表示切替
                     const newIndex = sentences.reduce((foundIdx, s, idx) => {
                         return (s.timestamp <= newTime) ? idx : foundIdx;
                     }, 0);
@@ -194,7 +211,7 @@
                         setCurrentIndex(newIndex);
                     }
 
-                    // 少し経ったらシークフラグを下ろす（即時だとuseEffectが反応してしまうため）
+                    // 少し経ったらシークフラグを下ろす
                     setTimeout(() => {
                         isSeekingRef.current = false;
                     }, 500);
@@ -338,17 +355,8 @@
                 }
             };
 
-            const playPodcastSegment = () => {
+            const playPodcast = () => {
                 if (audioPlayerRef.current && podcastAudioSrc) {
-                    const startTime = currentSentence.timestamp;
-                    const endTime = nextSentence ? nextSentence.timestamp : 999999;
-                    
-                    // ユーザーが手動で範囲外にシークしていた場合のみ、強制的に範囲内に戻す
-                    // （通常再生中に次のセグメントに行ってしまった場合などを想定）
-                    if (!isSeekingRef.current && (audioPlayerRef.current.currentTime < startTime || audioPlayerRef.current.currentTime >= endTime)) {
-                         audioPlayerRef.current.currentTime = startTime;
-                    }
-                    
                     audioPlayerRef.current.play().then(() => {
                         setIsAudioPlaying(true);
                     }).catch(e => {
@@ -450,9 +458,9 @@
                                 <div className="flex items-center gap-2">
                                     <button onClick={() => setCurrentIndex(prev => Math.max(0, prev - 1))} disabled={currentIndex === 0} className="p-3 bg-gray-100 rounded-full hover:bg-gray-200 disabled:opacity-30 transition"><ChevronLeft className="w-5 h-5 text-gray-600" /></button>
                                     
-                                    <button onClick={isAudioPlaying ? pausePodcast : playPodcastSegment} className={`flex-1 py-3 rounded-xl flex items-center justify-center gap-2 font-bold shadow-md transition ${isAudioPlaying ? 'bg-green-100 text-green-700 border border-green-200' : 'bg-slate-800 text-white hover:bg-slate-700'}`}>
+                                    <button onClick={isAudioPlaying ? pausePodcast : playPodcast} className={`flex-1 py-3 rounded-xl flex items-center justify-center gap-2 font-bold shadow-md transition ${isAudioPlaying ? 'bg-green-100 text-green-700 border border-green-200' : 'bg-slate-800 text-white hover:bg-slate-700'}`}>
                                         {isAudioPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
-                                        {isAudioPlaying ? "Pause" : "Play Segment"}
+                                        {isAudioPlaying ? "Pause" : "Play"}
                                     </button>
 
                                     <button onClick={() => setCurrentIndex(prev => Math.min(sentences.length - 1, prev + 1))} disabled={currentIndex === sentences.length - 1} className="p-3 bg-gray-100 rounded-full hover:bg-gray-200 disabled:opacity-30 transition"><ChevronRight className="w-5 h-5 text-gray-600" /></button>
