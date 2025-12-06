@@ -1,13 +1,27 @@
 import pandas as pd
+import csv
+import os
 
 def clean_vocabulary_data(input_file, output_file):
     """
     CSVファイルを読み込み、文法解説的な行（'plus sentence'や'+'記号を含む行）を
     削除して新しいファイルに出力します。
+    また、列の数が7でない行を修正します。
     """
     try:
-        # パイプ区切りでCSVを読み込む
-        df = pd.read_csv(input_file, sep='|')
+        with open(input_file, 'r', encoding='utf-8') as infile:
+            reader = csv.reader(infile, delimiter='|', quoting=csv.QUOTE_NONE)
+            header = [h.strip() for h in next(reader)]
+            num_columns = len(header)
+            
+            data = [header]
+            for i, row in enumerate(reader, 2):
+                if len(row) != num_columns:
+                    # print(f"Line {i}: Found {len(row)} fields, expected {num_columns}. Row content: {row}")
+                    row = (row + [''] * num_columns)[:num_columns]
+                data.append(row)
+
+        df = pd.DataFrame(data[1:], columns=data[0])
         
         # 削除前の行数を取得
         initial_count = len(df)
@@ -29,10 +43,16 @@ def clean_vocabulary_data(input_file, output_file):
             
             return False
 
-        # フィルタリング実行（文法行ではないものを残す）
-        # axis=1 は行ごとに処理を行う指定
-        mask = df.apply(is_grammar_row, axis=1)
-        cleaned_df = df[~mask] # maskがTrueの行を除外
+        # フィルタリング実行
+        # 1. 文法解説行を特定
+        mask_grammar = df.apply(is_grammar_row, axis=1)
+
+        # 2. 空行を特定 (ID列が空か、あるいはスペースのみかをチェック)
+        #    これにより '||||||' のような行が削除される
+        mask_empty = df['ID'].astype(str).str.strip() == ''
+        
+        # 両方のマスクを組み合わせて、不要な行を除外
+        cleaned_df = df[~(mask_grammar | mask_empty)]
         
         removed_count = initial_count - len(cleaned_df)
         
@@ -46,7 +66,7 @@ def clean_vocabulary_data(input_file, output_file):
         # 削除された行の内容を一部表示（確認用）
         if removed_count > 0:
             print("\n--- 削除された行の例 ---")
-            print(df[mask][['英文', '日本語訳']].head().to_string(index=False))
+            print(df[mask_grammar][['英文', '日本語訳']].head().to_string(index=False))
 
     except Exception as e:
         print(f"エラーが発生しました: {e}")

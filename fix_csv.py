@@ -11,9 +11,9 @@ def clean_trailing_pipes(filename):
 
     with open(backup_filename, 'r', encoding='utf-8') as infile, open(filename, 'w', encoding='utf-8') as outfile:
         for line in infile:
-            # rstrip('|') will remove trailing pipes and newlines
-            # so we add the newline back.
-            cleaned_line = line.rstrip('|') + '\n'
+            # rstrip() will remove trailing whitespace, including the newline.
+            # So we add it back.
+            cleaned_line = line.rstrip().rstrip('|') + '\n'
             outfile.write(cleaned_line)
     
     print(f"Cleaned {filename}")
