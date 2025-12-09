@@ -97,8 +97,8 @@
             const isSeekingRef = useRef(false);
             
             // Episode Management
-            const [fileList, setFileList] = useState([]); 
-            const [selectedFileName, setSelectedFileName] = useState('');
+            const [fileList, setFileList] = useState([]); // { name: string, path: string, type: 'podcast'|'local' }[]
+            const [selectedFilePath, setSelectedFilePath] = useState('');
             const [isLoading, setIsLoading] = useState(false);
             const [loadError, setLoadError] = useState(null);
 
@@ -210,68 +210,89 @@
                 }
             };
 
-            // ★変更点: JSONファイルからリストを取得する方式に変更
+            // ★変更点: podcastディレクトリとlocal_audioディレクトリの両方から取得
             const fetchEpisodeList = async () => {
                 setIsLoading(true);
                 setLoadError(null);
-                try {
-                    // podcast/episodes.json を読み込みに行く
-                    const res = await fetch('podcast/episodes.json');
-                    if (!res.ok) throw new Error(`エピソードリストを取得できませんでした (${res.status})`);
-                    
-                    const files = await res.json();
-                    
-                    // .mp3 で終わるファイルのみをフィルタリング（念のため）
-                    const mp3Files = files.filter(f => f.toLowerCase().endsWith('.mp3'));
+                
+                // 読み込むディレクトリの定義
+                const directories = [
+                    { path: 'podcast', label: 'Podcast' },
+                    { path: 'local_audio', label: 'Local' }
+                ];
 
-                    if (mp3Files.length > 0) {
-                        setFileList(mp3Files);
-                        loadFile(mp3Files[0]); // 最初のファイルをロード
+                let allFiles = [];
+
+                try {
+                    for (const dir of directories) {
+                        try {
+                            const res = await fetch(`${dir.path}/episodes.json`);
+                            if (res.ok) {
+                                const files = await res.json();
+                                // ファイル名にディレクトリ情報を付加してオブジェクト化
+                                const mappedFiles = files
+                                    .filter(f => f.toLowerCase().endsWith('.mp3'))
+                                    .map(f => ({
+                                        name: f,
+                                        path: `${dir.path}/${f}`,
+                                        directory: dir.label
+                                    }));
+                                allFiles = [...allFiles, ...mappedFiles];
+                            }
+                        } catch (err) {
+                            console.warn(`Could not load episodes from ${dir.path}:`, err);
+                            // どちらか片方が失敗しても、もう片方は表示するようにここではエラーを投げない
+                        }
+                    }
+
+                    if (allFiles.length > 0) {
+                        setFileList(allFiles);
+                        loadFile(allFiles[0].path); // 最初のファイルをロード
                     } else {
-                        console.warn("No mp3 files found in JSON.");
+                        console.warn("No mp3 files found in any directory.");
                         setFileList([]);
                         loadFile('demo'); 
                     }
                 } catch (err) {
-                    console.error("Failed to load episode list:", err);
-                    setLoadError("エピソードリストの読み込みに失敗しました。podcast/episodes.json が存在するか確認してください。デモデータを表示します。");
+                    console.error("Critical error loading episodes:", err);
+                    setLoadError("エピソードリストの読み込みに失敗しました。episodes.jsonの記述を確認してください。");
                     loadFile('demo');
                 } finally {
                     setIsLoading(false);
                 }
             };
 
-            const loadFile = async (fileName) => {
+            // ★変更点: ファイル名ではなくパス全体を受け取る
+            const loadFile = async (filePath) => {
                 setIsLoading(true);
                 setLoadError(null);
-                setSelectedFileName(fileName);
+                setSelectedFilePath(filePath);
                 
-                if (fileName === 'demo') {
+                if (filePath === 'demo') {
                     parseCSV(DEMO_CSV_CONTENT);
                     setPodcastAudioSrc(null);
                     setIsLoading(false);
                     return;
                 }
 
-                const mp3Path = `podcast/${fileName}`;
-                // MP3のファイル名からCSVのパスを推測 (拡張子置換)
-                const csvPath = `podcast/${fileName.replace(/\.mp3$/i, '.csv')}`;
+                // パスからCSVのパスを生成 (拡張子置換)
+                const csvPath = filePath.replace(/\.mp3$/i, '.csv');
 
                 try {
                     const res = await fetch(csvPath);
                     if (!res.ok) {
                          if(res.status === 404) {
-                             throw new Error(`CSVファイルが見つかりません: ${csvPath}\nMP3と同じファイル名で、拡張子を.csvにしたファイルを用意してください。`);
+                             throw new Error(`CSVファイルが見つかりません: ${csvPath}\nMP3と同じフォルダに、同じ名前で拡張子を.csvにしたファイルを用意してください。`);
                          }
                          throw new Error(`CSV読み込みエラー (${res.status}): ${csvPath}`);
                     }
                     const text = await res.text();
                     parseCSV(text);
-                    setPodcastAudioSrc(mp3Path);
+                    setPodcastAudioSrc(filePath); // パスをそのまま設定
                 } catch (err) {
                     console.error(err);
                     setLoadError(err.message);
-                    setPodcastAudioSrc(mp3Path); 
+                    setPodcastAudioSrc(filePath); 
                     
                     setSentences([{
                         id: 0,
@@ -386,12 +407,14 @@
                             <div className="flex gap-2 items-center">
                                 <select 
                                     className="flex-1 bg-slate-800 text-sm rounded px-2 py-1 border border-slate-700 focus:outline-none focus:border-green-500"
-                                    value={selectedFileName}
+                                    value={selectedFilePath}
                                     onChange={(e) => loadFile(e.target.value)}
                                 >
                                     {fileList.length === 0 && <option value="demo">-- Demo Data --</option>}
-                                    {fileList.map((fileName, idx) => (
-                                        <option key={idx} value={fileName}>{fileName}</option>
+                                    {fileList.map((file, idx) => (
+                                        <option key={idx} value={file.path}>
+                                            [{file.directory}] {file.name}
+                                        </option>
                                     ))}
                                 </select>
                                 <button onClick={fetchEpisodeList} className="p-1 bg-slate-800 rounded hover:bg-slate-700 text-gray-400" title="リスト更新">
