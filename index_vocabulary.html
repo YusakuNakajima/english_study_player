@@ -18,17 +18,16 @@
         .dual-range-container {
             position: relative;
             width: 100%;
-            height: 24px; /* Ensure enough height for thumbs */
+            height: 24px;
             display: flex;
             align-items: center;
         }
         
-        /* The inputs stack on top of each other */
         .dual-slider-input {
             position: absolute;
             width: 100%;
             height: 100%;
-            pointer-events: none; /* Let clicks pass through to the track or other elements, except the thumb */
+            pointer-events: none;
             appearance: none;
             -webkit-appearance: none;
             background: transparent;
@@ -36,10 +35,9 @@
             margin: 0;
         }
 
-        /* The thumb itself captures pointer events */
         .dual-slider-input::-webkit-slider-thumb {
             -webkit-appearance: none;
-            pointer-events: auto; /* Re-enable pointer events for the thumb */
+            pointer-events: auto;
             height: 16px;
             width: 16px;
             border-radius: 50%;
@@ -47,12 +45,11 @@
             cursor: pointer;
             border: 2px solid white;
             box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-            margin-top: -6px; /* Align with custom track */
+            margin-top: -6px;
             position: relative;
             z-index: 20;
         }
         
-        /* Firefox Thumb */
         .dual-slider-input::-moz-range-thumb {
             pointer-events: auto;
             height: 16px;
@@ -65,15 +62,8 @@
             z-index: 20;
         }
 
-        /* Remove default tracks so we can draw our own */
-        .dual-slider-input::-webkit-slider-runnable-track {
-            background: transparent;
-            height: 4px;
-        }
-        .dual-slider-input::-moz-range-track {
-            background: transparent;
-            height: 4px;
-        }
+        .dual-slider-input::-webkit-slider-runnable-track { background: transparent; height: 4px; }
+        .dual-slider-input::-moz-range-track { background: transparent; height: 4px; }
     </style>
 </head>
 <body class="bg-gray-50">
@@ -107,6 +97,7 @@
         const Robot = ({ className }) => <IconBase className={className}>🤖</IconBase>;
         const Shuffle = ({ className }) => <IconBase className={className}>🔀</IconBase>;
         const Copy = ({ className }) => <IconBase className={className}>📋</IconBase>;
+        const Clock = ({ className }) => <IconBase className={className}>⏱</IconBase>; // New Clock Icon
 
         // --- 初期データセット (デモ用) ---
         const DEFAULT_SENTENCES = [
@@ -147,7 +138,7 @@
             
             // Chunk Filters
             const [minChunkCount, setMinChunkCount] = useState(1);
-            const [maxChunkCount, setMaxChunkCount] = useState(10); // Default Max
+            const [maxChunkCount, setMaxChunkCount] = useState(10);
             
             // Random Mode
             const [isRandomMode, setIsRandomMode] = useState(false);
@@ -161,8 +152,12 @@
             const [isNativePlaying, setIsNativePlaying] = useState(false);
             const [nativeAudioError, setNativeAudioError] = useState(false);
             
-            const [showMeaning, setShowMeaning] = useState(false); // Studyモード用
-            const [showCompositionAnswer, setShowCompositionAnswer] = useState(false); // Compositionモード用
+            const [showMeaning, setShowMeaning] = useState(false);
+            const [showCompositionAnswer, setShowCompositionAnswer] = useState(false);
+
+            // Timer State (New)
+            const [timer, setTimer] = useState(0);
+            const timerRef = useRef(null);
 
             const [audioMap, setAudioMap] = useState({});
             const audioPlayerRef = useRef(null);
@@ -179,23 +174,19 @@
             const nativeAudioSrc = currentSentence ? (audioMap[currentSentence.id] || `./audio/${currentSentence.id}.mp3`) : "";
 
             // --- Computed ---
-            // Calculate the absolute max chunks available in the dataset for the slider UI
             const maxPossibleChunks = useMemo(() => {
                 if (allSentences.length === 0) return 10;
                 return Math.max(...allSentences.map(s => s.chunks.length), 5);
             }, [allSentences]);
 
-            // Percentage calculations for the range bar
             const minPercent = ((minChunkCount - 1) / (maxPossibleChunks - 1)) * 100;
             const maxPercent = ((maxChunkCount - 1) / (maxPossibleChunks - 1)) * 100;
 
             // --- Effects ---
             
-            // フィルタリング処理 (Min & Max)
+            // Filter
             useEffect(() => {
-                // If we are in random mode, we do not want standard filters to overwrite our shuffled subset
                 if (isRandomMode) return;
-
                 const filtered = allSentences.filter(s => {
                     const count = s.chunks.length;
                     return count >= minChunkCount && count <= maxChunkCount;
@@ -204,13 +195,13 @@
                 if (currentIndex >= filtered.length) setCurrentIndex(0);
             }, [minChunkCount, maxChunkCount, allSentences, isRandomMode]);
 
-            // Adjust max slider if data changes
             useEffect(() => {
                 if (maxChunkCount > maxPossibleChunks) {
                     setMaxChunkCount(maxPossibleChunks);
                 }
             }, [maxPossibleChunks]);
 
+            // Auto Load
             useEffect(() => {
                 const autoLoadData = async () => {
                     try {
@@ -220,9 +211,7 @@
                         const text = await response.text();
                         if (!text.trim()) throw new Error("Empty CSV");
                         const loaded = parseCSV(text, true);
-                        if (loaded) {
-                            setIsDataLoaded(true);
-                        }
+                        if (loaded) setIsDataLoaded(true);
                     } catch (error) {
                         console.log("Auto-load failed. Using demo mode.");
                         setIsDataLoaded(false);
@@ -237,10 +226,11 @@
                 return () => {
                     cancelSpeech();
                     Object.values(audioMap).forEach(url => URL.revokeObjectURL(url));
+                    clearInterval(timerRef.current); // Cleanup timer
                 };
             }, []);
 
-            // ページやモードが変わったときのリセット処理
+            // Reset handling
             useEffect(() => {
                 cancelSpeech();
                 stopNativeAudio();
@@ -248,6 +238,26 @@
                 setShowMeaning(false);
                 setShowCompositionAnswer(false);
             }, [currentIndex, mode, sentences]);
+
+            // --- Timer Logic (New) ---
+            useEffect(() => {
+                // Clear any existing timer first
+                clearInterval(timerRef.current);
+
+                // Start timer ONLY if in composition mode AND answer is NOT shown
+                if (mode === 'composition' && !showCompositionAnswer) {
+                    const startTime = Date.now();
+                    setTimer(0);
+                    timerRef.current = setInterval(() => {
+                        // Calculate elapsed time in seconds with 1 decimal place
+                        setTimer((Date.now() - startTime) / 1000);
+                    }, 50); // Update roughly every 50ms for smoothness
+                }
+
+                // Cleanup function
+                return () => clearInterval(timerRef.current);
+            }, [mode, currentIndex, showCompositionAnswer]);
+
 
             // --- Functions ---
             
@@ -257,22 +267,16 @@
                     alert("有効な数字を入力してください。");
                     return;
                 }
-
-                // Get current pool based on sliders first
                 const pool = allSentences.filter(s => {
                     const c = s.chunks.length;
                     return c >= minChunkCount && c <= maxChunkCount;
                 });
-
                 if (pool.length === 0) {
                     alert("現在のフィルター条件に一致する問題がありません。");
                     return;
                 }
-
-                // Shuffle and slice
                 const shuffled = [...pool].sort(() => 0.5 - Math.random());
                 const selected = shuffled.slice(0, count);
-
                 setSentences(selected);
                 setIsRandomMode(true);
                 setCurrentIndex(0);
@@ -281,14 +285,10 @@
 
             const handleExitRandom = () => {
                 setIsRandomMode(false);
-                // The useEffect for filters will trigger and restore the full list
             };
 
-            // Export IDs to clipboard
             const handleExportIds = () => {
                 const ids = sentences.map(s => s.id).join(', ');
-                
-                // Fallback for clipboard copy (iframe safe)
                 const textArea = document.createElement("textarea");
                 textArea.value = ids;
                 document.body.appendChild(textArea);
@@ -303,38 +303,27 @@
                 document.body.removeChild(textArea);
             };
 
-            // Import IDs
             const handleImportIds = () => {
                 if (!idImportInput.trim()) return;
-                
-                // Parse input: split by comma, spaces, etc.
                 const ids = idImportInput.split(/[,、\s]+/).map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
-                
                 if (ids.length === 0) {
                     alert("有効なIDが見つかりませんでした。");
                     return;
                 }
-
-                // Create a map for fast lookup
                 const sentenceMap = new Map(allSentences.map(s => [s.id, s]));
-                
-                // Keep order of input IDs
                 const restoredSentences = ids.map(id => sentenceMap.get(id)).filter(s => s !== undefined);
-                
                 if (restoredSentences.length === 0) {
                     alert("入力されたIDに一致する問題が見つかりませんでした。");
                     return;
                 }
-
                 setSentences(restoredSentences);
-                setIsRandomMode(true); // Treat as a random/custom session so filters don't override
-                setMode('study'); // Go to study mode
+                setIsRandomMode(true);
+                setMode('study');
                 setCurrentIndex(0);
-                setIdImportInput(""); // Clear input
+                setIdImportInput("");
                 alert(`${restoredSentences.length}件の問題を読み込みました！`);
             };
 
-            // Native音声再生
             const playNativeAudio = () => {
                 cancelSpeech();
                 if (audioPlayerRef.current && nativeAudioSrc && !nativeAudioError) {
@@ -354,7 +343,6 @@
                 setIsNativePlaying(false);
             };
 
-            // Robot音声再生 (TTS)
             const speakText = (text, rate = 1.0, onEnd = () => {}) => {
                 stopNativeAudio();
                 cancelSpeech();
@@ -367,20 +355,17 @@
                 synthesisRef.current.speak(utterance);
             };
 
-            // 「答えを見る」ボタンを押したときの処理（自動再生ロジック）
             const handleShowAnswer = async () => {
                 setShowCompositionAnswer(true);
+                // Timer stops automatically via useEffect dependency
                 
-                // Native音声の再生を試みる
                 if (nativeAudioSrc && !nativeAudioError) {
                     const success = await playNativeAudio();
                     if (!success) {
-                        // Native再生に失敗したらRobot音声を流す
                         console.log("Fallback to Robot Voice");
                         speakText(currentSentence.text);
                     }
                 } else {
-                    // Native音声ソースがない場合は最初からRobot音声を流す
                     speakText(currentSentence.text);
                 }
             };
@@ -602,7 +587,7 @@
                                                         setMinChunkCount(val);
                                                     }} 
                                                     className="dual-slider-input"
-                                                    style={{ zIndex: minChunkCount > maxPossibleChunks - 1 ? 20 : 10 }} // Ensure accessibility if overlapped at end
+                                                    style={{ zIndex: minChunkCount > maxPossibleChunks - 1 ? 20 : 10 }}
                                                 />
                                                 
                                                 {/* Max Slider Input */}
@@ -768,6 +753,14 @@
                                                     <div className={`p-8 pt-10 text-center transition-colors duration-500 ${showCompositionAnswer ? 'bg-indigo-50' : 'bg-gray-50'}`}>
                                                         {!showCompositionAnswer ? (
                                                             <div className="py-8">
+                                                                {/* Timer Display when thinking */}
+                                                                <div className="mb-4 flex justify-center">
+                                                                    <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-indigo-100 text-indigo-700 rounded-full font-mono text-lg font-bold shadow-sm">
+                                                                        <Clock className="w-5 h-5" />
+                                                                        {timer.toFixed(1)}s
+                                                                    </div>
+                                                                </div>
+
                                                                 <button 
                                                                     onClick={handleShowAnswer}
                                                                     className="w-full max-w-xs mx-auto py-4 bg-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-200 hover:bg-indigo-700 hover:scale-105 transition transform active:scale-95 flex items-center justify-center gap-2"
@@ -779,7 +772,13 @@
                                                         ) : (
                                                             <div className="animate-slideUp space-y-6">
                                                                 <div>
-                                                                    <div className="inline-block px-3 py-1 bg-indigo-100 rounded-full text-[10px] font-bold text-indigo-500 mb-4 tracking-wider">ENGLISH</div>
+                                                                    <div className="flex justify-center items-center gap-2 mb-4">
+                                                                        <div className="inline-block px-3 py-1 bg-indigo-100 rounded-full text-[10px] font-bold text-indigo-500 tracking-wider">ENGLISH</div>
+                                                                        {/* Final Time Display */}
+                                                                        <div className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-200 text-gray-600 rounded text-xs font-mono font-bold">
+                                                                            <Clock className="w-3 h-3" /> {timer.toFixed(1)}s
+                                                                        </div>
+                                                                    </div>
                                                                     <p className="text-xl md:text-2xl font-bold text-indigo-900 leading-relaxed mb-4">{currentSentence.text}</p>
                                                                     <div className="flex flex-wrap justify-center gap-1 opacity-70 scale-90">
                                                                         {currentSentence.chunks.map((c, i) => (
